@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="mn">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Өнгө өнгийн салют (Fireworks)</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background-color: #050510;
+      cursor: crosshair;
+      font-family: system-ui, -apple-system, sans-serif;
+    }
+
+    canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+
+    .hint {
+      position: fixed;
+      top: 16px;
+      left: 50%;
+      transform: translateX(-50%);
+      color: rgba(255, 255, 255, 0.7);
+      font-size: 14px;
+      pointer-events: none;
+      user-select: none;
+      background: rgba(255, 255, 255, 0.08);
+      padding: 8px 16px;
+      border-radius: 999px;
+      backdrop-filter: blur(4px);
+    }
+  </style>
+</head>
+<body>
+  <div class="hint">Дэлгэц дээр дарж эсвэл чирч салют буудуулна уу ✨</div>
+  <canvas id="fireworksCanvas"></canvas>
+
+  <script>
+    const canvas = document.getElementById('fireworksCanvas');
+    const ctx = canvas.getContext('255') || canvas.getContext('2d');
+
+    let width = canvas.width = window.innerWidth;
+    let height = canvas.height = window.innerHeight;
+
+    window.addEventListener('resize', () => {
+      width = canvas.width = window.innerWidth;
+      height = canvas.height = window.innerHeight;
+    });
+
+    const rockets = [];
+    const particles = [];
+
+    function random(min, max) {
+      return Math.random() * (max - min) + min;
+    }
+
+    // Хурц, тод өнгө үүсгэх (HSL өнгийн загвар)
+    function randomColor() {
+      const hue = Math.floor(random(0, 360));
+      return {
+        hue,
+        color: `hsl(${hue}, 100%, 60%)`
+      };
+    }
+
+    // Дээш хөөрч буй пуужин
+    class Rocket {
+      constructor(startX, startY, targetX, targetY) {
+        this.x = startX;
+        this.y = startY;
+        this.targetX = targetX;
+        this.targetY = targetY;
+
+        const angle = Math.atan2(targetY - startY, targetX - startX);
+        const distance = Math.hypot(targetX - startX, targetY - startY);
+        const speed = random(7, 11);
+
+        this.vx = Math.cos(angle) * speed;
+        this.vy = Math.sin(angle) * speed;
+        this.distanceToTarget = distance;
+        this.traveled = 0;
+
+        const colorObj = randomColor();
+        this.hue = colorObj.hue;
+        this.color = colorObj.color;
+        this.trail = [];
+      }
+
+      update() {
+        this.trail.push({ x: this.x, y: this.y });
+        if (this.trail.length > 6) {
+          this.trail.shift();
+        }
+
+        const prevX = this.x;
+        const prevY = this.y;
+
+        this.x += this.vx;
+        this.y += this.vy;
+
+        this.traveled += Math.hypot(this.x - prevX, this.y - prevY);
+
+        if (this.traveled >= this.distanceToTarget || this.vy >= 0) {
+          createExplosion(this.x, this.y, this.hue);
+          return false; // Пуужинг устгах
+        }
+        return true;
+      }
+
+      draw() {
+        // Сүүлийн мөр
+        ctx.beginPath();
+        for (let i = 0; i < this.trail.length; i++) {
+          const point = this.trail[i];
+          if (i === 0) ctx.moveTo(point.x, point.y);
+          else ctx.lineTo(point.x, point.y);
+        }
+        ctx.strokeStyle = this.color;
+        ctx.lineWidth = 2.5;
+        ctx.stroke();
+
+        // Пуужингийн гэрэлт цэг
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, 3, 0, Math.PI * 2);
+        ctx.fillStyle = '#ffffff';
+        ctx.fill();
+      }
+    }
+
+    // Тэсрэлтийн оч
+    class Particle {
+      constructor(x, y, hue) {
+        this.x = x;
+        this.y = y;
+
+        // Зарим оч анхны өнгөнөөс бага зэрэг зөрүү өнгөтэй байвал илүү гоё харагддаг
+        const particleHue = hue + random(-25, 25);
+        this.color = `hsl(${particleHue}, 100%, 60%)`;
+
+        const angle = random(0, Math.PI * 2);
+        const speed = random(1.5, 8.5);
+
+        this.vx = Math.cos(angle) * speed;
+        this.vy = Math.sin(angle) * speed;
+
+        this.friction = 0.96;   // Агаарын эсэргүүцэл
+        this.gravity = 0.12;    // Татах хүч
+        this.alpha = 1;
+        this.decay = random(0.012, 0.025);
+        this.radius = random(1.8, 3.5);
+      }
+
+      update() {
+        this.vx *= this.friction;
+        this.vy *= this.friction;
+        this.vy += this.gravity;
+
+        this.x += this.vx;
+        this.y += this.vy;
+
+        this.alpha -= this.decay;
+        return this.alpha > 0;
+      }
+
+      draw() {
+        ctx.save();
+        ctx.globalAlpha = Math.max(0, this.alpha);
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+        ctx.fillStyle = this.color;
+        ctx.shadowBlur = 10;
+        ctx.shadowColor = this.color;
+        ctx.fill();
+        ctx.restore();
+      }
+    }
+
+    function createExplosion(x, y, hue) {
+      const particleCount = Math.floor(random(60, 120));
+      for (let i = 0; i < particleCount; i++) {
+        particles.push(new Particle(x, y, hue));
+      }
+    }
+
+    function launchRocket(targetX, targetY) {
+      const startX = random(width * 0.2, width * 0.8);
+      const startY = height;
+      rockets.push(new Rocket(startX, startY, targetX, targetY));
+    }
+
+    // Дэлгэц дээр дарахад салют буудах
+    canvas.addEventListener('pointerdown', (e) => {
+      launchRocket(e.clientX, e.clientY);
+    });
+
+    // Хулганаар чирэхэд олон өнгийн салют буудах
+    let isDragging = false;
+    let lastDragTime = 0;
+    canvas.addEventListener('pointerdown', () => isDragging = true);
+    window.addEventListener('pointerup', () => isDragging = false);
+    canvas.addEventListener('pointermove', (e) => {
+      if (!isDragging) return;
+      const now = Date.now();
+      if (now - lastDragTime > 120) {
+        launchRocket(e.clientX, e.clientY);
+        lastDragTime = now;
+      }
+    });
+
+    // Үндсэн хөдөлгөөний давталт
+    let autoTimer = 0;
+    function animate() {
+      requestAnimationFrame(animate);
+
+      // Өмнөх кадруудыг зөөлөн бүдгэрүүлж гэрлийн мөр үлдээх
+      ctx.fillStyle = 'rgba(5, 5, 16, 0.2)';
+      ctx.fillRect(0, 0, width, height);
+
+      // Автомат салют буудах
+      autoTimer++;
+      if (autoTimer % 45 === 0) {
+        launchRocket(
+          random(width * 0.15, width * 0.85),
+          random(height * 0.12, height * 0.55)
+        );
+      }
+
+      for (let i = rockets.length - 1; i >= 0; i--) {
+        if (!rockets[i].update()) {
+          rockets.splice(i, 1);
+        } else {
+          rockets[i].draw();
+        }
+      }
+
+      for (let i = particles.length - 1; i >= 0; i--) {
+        if (!particles[i].update()) {
+          particles.splice(i, 1);
+        } else {
+          particles[i].draw();
+        }
+      }
+    }
+
+    animate();
+  </script>
+</body>
+</html>
